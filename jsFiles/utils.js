@@ -239,10 +239,10 @@ const createSpinner = function(canvas, spinnerData, score, sectors, reliability,
           let sectorIdx = getIndex();
           let flip = flip_array.pop();
           if (flip == 1) {
-            const offsetChoices = [2, 2, 2];
+            const offsetChoices = [1, 2, 3];
             const offset = offsetChoices[Math.floor(Math.random() * offsetChoices.length)];
             const targetIdx = (sectorIdx + offset) % tot;
-            swivelToIndex(targetIdx, 500); // 300–700ms feels snappy; tweak as you like
+            swivelToIndex(targetIdx, 300); // 300–700ms feels snappy; tweak as you like
           } else {
             finalizeAt(sectorIdx);
           };
