@@ -5,7 +5,7 @@ const exp = (function() {
 
     var p = {};
 
-    const condition = Math.floor(Math.random() * 2);
+    const condition = 0;
 
     const play = ["play", "watch"][condition];
 
@@ -227,34 +227,31 @@ const exp = (function() {
 
 
     // define each wedge
+    const baseColors = ["#06D6A0", "#EF476F", "#F4D35E", "#6A9FB5"];
+
+    // Define wedges as pure numbers/labels (no colors here)
     const wedges = {
-        one: {color: "#06D6A0", font: 'white', label:"1", points: 1},
-        three: {color: "#EF476F", font: 'white', label:"3", points: 3},
-        five: {color: "#F4D35E", font: 'white', label:"5", points: 5},
-        seven: {color: "#6A9FB5", font: 'white', label:"7", points: 7},
-        nine: {color: "#EE964B", font: 'white', label:"9", points: 9},
-        eleven: {color: "#736CED", font: 'white', label:"11", points: 11},
+      one:    { font: "white", label: "1",  points: 1 },
+      three:  { font: "white", label: "3",  points: 3 },
+      five:   { font: "white", label: "5",  points: 5 },
+      seven:  { font: "white", label: "7",  points: 7 },
+      nine:   { font: "white", label: "9",  points: 9 },
+      eleven: { font: "white", label: "11", points: 11 },
     };
 
-    function shuffleColorsInPlace(wedgesObj) {
-        const shuffledColors = jsPsych.randomization.repeat(Object.values(wedgesObj).map(w => w.color), 1);
-        Object.keys(wedgesObj).forEach((key, i) => { wedgesObj[key].color = shuffledColors[i] });
-    };
+    // Helper: assign the 4 fixed colors to whatever four wedges you give it
+    function assignColors(sectorDefs) {
+      return sectorDefs.map((w, i) => ({
+        ...w,
+        color: baseColors[i % baseColors.length]  // cycle through the 4 base colors
+      }));
+    }
 
-    // define each wheel
+    // Example wheels
     const wheels = [
-
-            {sectors: [ wedges.one, wedges.three, wedges.five, wedges.seven ], wheel_id: 1, reliability: 1, label: "0%", ev: 4, mi: 2},
-            {sectors: [ wedges.one, wedges.three, wedges.five, wedges.seven ], wheel_id: 2, reliability: .75, label: "25%", ev: 4, mi: .792},
-            {sectors: [ wedges.one, wedges.three, wedges.five, wedges.seven ], wheel_id: 3, reliability: .5, label: "50%", ev: 4, mi: .208},
-            {sectors: [ wedges.one, wedges.three, wedges.five, wedges.seven ], wheel_id: 4, reliability: .25, label: "75%", ev: 4, mi: 0},
-
-            {sectors: [ wedges.five, wedges.seven, wedges.nine, wedges.eleven ], wheel_id: 5, reliability: 1, label: "0%", ev: 8, mi: 2},
-            {sectors: [ wedges.five, wedges.seven, wedges.nine, wedges.eleven ], wheel_id: 6, reliability: .75, label: "25%", ev: 8, mi: .792},
-            {sectors: [ wedges.five, wedges.seven, wedges.nine, wedges.eleven ], wheel_id: 7, reliability: .5, label: "50%", ev: 8, mi: .208},
-            {sectors: [ wedges.five, wedges.seven, wedges.nine, wedges.eleven ], wheel_id: 8, reliability: .25, label: "75%", ev: 8, mi: 0},
-
-        ];
+      { sectors: assignColors([wedges.one, wedges.three, wedges.five, wedges.seven]), wheel_id: 1, reliability: 1, label: "0%", ev: 4, mi: 2, },
+      { sectors: assignColors([wedges.three, wedges.three, wedges.three, wedges.seven]), wheel_id: 2, reliability: 1, label: "0%", ev: 4, mi: 2, },
+    ];
 
     let scoreTracker = 0; // track current score
 
@@ -433,6 +430,6 @@ const exp = (function() {
 
 }());
 
-const timeline = [exp.consent, exp.instLoop, exp.postIntro, exp.task, exp.demographics, exp.save_data];
+const timeline = [exp.task, exp.consent, exp.instLoop, exp.postIntro, exp.task, exp.demographics, exp.save_data];
 
 jsPsych.run(timeline);

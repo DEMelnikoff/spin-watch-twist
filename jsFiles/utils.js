@@ -73,276 +73,162 @@ const createSpinner = function(canvas, spinnerData, score, sectors, reliability,
   const PI = Math.PI;
   const arc = (2 * PI) / tot; // arc sizes in radians
 
-  /* spin dynamics */
-  const friction = 0.975;  // 0.995=soft, 0.99=mid, 0.98=hard
-  const angVelMin = 5; // Below that number will be treated as a stop
-  let angVelMax = 0; // Random ang.vel. to acceletare to 
-  let angVel = 0;    // Current angular velocity
-
   /* state variables */
-  let isGrabbed = false;       // true when wheel is grabbed, false otherwise
-  let isDragging = false;      // true when wheel is being dragged, false otherwise
-  let isSpinning = false;      // true when wheel is spinning, false otherwise
-  let isAccelerating = false;  // true when wheel is accelerating, false otherwise
-  let lastAngles = [0,0,0];    // store the last three angles
-  let correctSpeed = [0]       // speed corrected for 360-degree limit
-  let startAngle = null;       // angle of grab
-  let oldAngle = 0;            // wheel angle prior to last perturbation
-  let oldAngle_corrected;
-  let currentAngle = null;     // wheel angle after last perturbation
-  let onWheel = false;         // true when cursor is on wheel, false otherwise
-  let spin_num = 5             // number of spins
-  let liveSectorLabel;
-  let animId = null;          // current requestAnimationFrame handle
+  let assignment = null;
+  let conceal = true;     // wedges hidden ("?") while true
+  let stopping = false;   // true only during stop/reveal/finalize
+  let rafId = null;
+  let oldAngle = 0;
+  let currentAngle = 0;
 
   /* define spinning functions */
 
-  const onGrab = (x, y) => {
-    if (!isSpinning) {
-      canvas.style.cursor = "grabbing";
-      isGrabbed = true;
-      startAngle = calculateAngle(x, y);
-    };
-  };
-
-  const calculateAngle =  (currentX, currentY) => {
-    let xLength = currentX - wheelX;
-    let yLength = currentY - wheelY;
-    let angle = Math.atan2(xLength, yLength) * (180/Math.PI);
-    return 360 - angle;
-  };
-
-  const onMove = (x, y) => {
-    if(isGrabbed) {
-      canvas.style.cursor = "grabbing";
-      isDragging = true;
-    };
-    if(!isDragging)
-      return
-    lastAngles.shift();
-    let deltaAngle = calculateAngle(x, y) - startAngle;
-    currentAngle = deltaAngle + oldAngle;
-    lastAngles.push(currentAngle);
-    let speed = lastAngles[2] - lastAngles[0];
-    if (Math.abs(speed) < 200) {
-      correctSpeed.shift();
-      correctSpeed.push(speed);
-    };
-    render(currentAngle);
-  };
-
-  const render = (deg) => {
-    canvas.style.transform = `rotate(${deg}deg)`;
-  };
+  const render = deg => { canvas.style.transform = `rotate(${deg}deg)`; };
 
 
-  const onRelease = function() {
-    isGrabbed = false;
-    if(isDragging){
-      isDragging = false;
-      oldAngle = currentAngle;
-      let speed = correctSpeed[0];
-      if (Math.abs(speed) > angVelMin) {
-        let direction = (speed > 0) ? 1 : -1;
-        isAccelerating = true;
-        isSpinning = true;
-        angVelMax = rand(25, 50);
-        giveMoment(speed)
-      };
-    };   
-  };
+  function startCycle() {
+    conceal = true;       // mask labels
+    stopping = false;
 
-  // finalize outcome for a given sector index (push + draw + score)
+    // Build a random assignment of labels/points to the visible colors
+    // (shuffles the sector labels/points independently of color order)
+    const payloads = sectors.map(s => ({ label: s.label, points: s.points }));
+    assignment = jsPsych.randomization.sampleWithoutReplacement(payloads, payloads.length);
+
+    drawSector(sectors, null);
+
+    const dir = (Math.random() < 0.5 ? 1 : -1);
+    const fast = dir * 4;  // brief fast burst
+    const coast = dir * 4;  // steady slow/medium
+    spinPhase(fast, 500, () => coastIndefinitely(coast));
+  }
+
+  function spinPhase(targetSpeed, durationMs, nextPhase) {
+    const start = performance.now();
+    function step(now) {
+      const dt = step.prev ? (now - step.prev) / 1000 : 0;
+      step.prev = now;
+      oldAngle += targetSpeed * dt * 60;
+      currentAngle = oldAngle;
+      render(oldAngle);
+
+      const t = now - start;
+      if (!stopping && t < durationMs) {
+        rafId = requestAnimationFrame(step);
+      } else if (!stopping && typeof nextPhase === "function") {
+        nextPhase();
+      }
+    }
+    rafId = requestAnimationFrame(step);
+  }
+
+  function coastIndefinitely(speed) {
+    function step(now) {
+      const dt = step.prev ? (now - step.prev) / 1000 : 0;
+      step.prev = now;
+      oldAngle += speed * dt * 60;
+      currentAngle = oldAngle;
+      render(oldAngle);
+      if (!stopping) rafId = requestAnimationFrame(step);
+    }
+    rafId = requestAnimationFrame(step);
+  }
+
   function finalizeAt(sectorIdx) {
-    const sector = sectors[sectorIdx];
-    const points = sector.points; // adjust if your 'points' can be arrays elsewhere
+    // Use the random assignment for this cycle
+    const chosen = assignment && assignment[sectorIdx] ? assignment[sectorIdx] : { label: "?", points: 0 };
+    const points = chosen.points;
+
     spinnerData.outcomes_points.push(points);
-    spinnerData.outcomes_wedges.push(sector.points); // or sector.label if that's what you store
-    drawSector(sectors, sectorIdx, points);
+    spinnerData.outcomes_wedges.push(chosen.label); // store revealed label if you want
+
+    drawSector(sectors, sectorIdx);  // revealed view with correct label
     updateScore(points, "black");
   }
 
-  // animate a short swivel from currentAngle to the target index
-  function swivelToIndex(targetIdx, duration = 500) {
-    const startAngle = currentAngle;
-    const arcDeg = 360 / tot;
-
-    // Find a small integer multiple of arcDeg that lands exactly on targetIdx
-    let bestK = 0;
-    for (let k = -tot; k <= tot; k++) {
-      if (getIndex(startAngle + k * arcDeg) === targetIdx) { bestK = k; break; }
-    }
-    const endAngle = startAngle + bestK * arcDeg;
-
-    const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
-
-    function tick(tsStart) {
-      return function rafStep(ts) {
-        const p = Math.min(1, (ts - tsStart) / duration);
-        const eased = easeOutCubic(p);
-        const ang = startAngle + (endAngle - startAngle) * eased;
-        currentAngle = oldAngle = ang;
-        render(ang);
-        if (p < 1) requestAnimationFrame(rafStep);
-        else finalizeAt(targetIdx);
-      };
-    }
-    requestAnimationFrame(tick(performance.now()));
+  function hardStopAndReveal() {
+    if (stopping) return;
+    stopping = true;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    currentAngle = oldAngle;
+    const idx = getIndex();
+    conceal = false;
+    drawSector(sectors, idx);   // reveal once here
+    finalizeAt(idx);            // record outcome only
   }
-
-  const giveMoment = function(initialSpeed) {
-
-    let speed = initialSpeed;
-    let lastTimestamp = null;
-
-    function step(timestamp) {
-      if (!lastTimestamp) lastTimestamp = timestamp;
-      const deltaTime = (timestamp - lastTimestamp) / 1000; // seconds
-      lastTimestamp = timestamp;
-
-      // stop accelerating when max speed is reached
-      if (Math.abs(speed) >= angVelMax) { isAccelerating = false } ;
-
-      let liveSector = sectors[getIndex(oldAngle)];
-      liveSectorLabel = liveSector.label;
-      oldAngle_corrected = (oldAngle < 0) ? 360 + (oldAngle % 360) : oldAngle % 360;
-
-
-      // accelerate
-      if (isAccelerating) {
-        let growthRate = Math.log(1.06) * 60;
-        speed *= Math.exp(growthRate * deltaTime);
-        animId = requestAnimationFrame(step);
-        oldAngle += speed * deltaTime * 60;
-        lastAngles.shift();
-        lastAngles.push(oldAngle);
-        render(oldAngle);
-      }
-      
-      // decelerate and stop
-      else {
-        let decayRate = Math.log(friction) * 60; // friction < 1, so log is negative
-        isAccelerating = false;
-        speed *= Math.exp(decayRate * deltaTime); // Exponential decay
-        animId = requestAnimationFrame(step);
-        if (Math.abs(speed) > angVelMin * .1) {
-          // decelerate
-          oldAngle += speed * deltaTime * 60;
-          lastAngles.shift();
-          lastAngles.push(oldAngle);
-          render(oldAngle);       
-        } else {
-          // stop spinner
-          speed = 0;
-          if (animId !== null) { cancelAnimationFrame(animId); animId = null; }
-          currentAngle = oldAngle;
-          let sectorIdx = getIndex();
-          let flip = flip_array.pop();
-          if (flip == 1) {
-            const offsetChoices = [1, 2, 3];
-            const offset = offsetChoices[Math.floor(Math.random() * offsetChoices.length)];
-            const targetIdx = (sectorIdx + offset) % tot;
-            swivelToIndex(targetIdx, 300); // 300–700ms feels snappy; tweak as you like
-          } else {
-            finalizeAt(sectorIdx);
-          };
-        };
-      };
-    };
-    animId = requestAnimationFrame(step);
-  };
-
-  /* generate random float in range min-max */
-  const rand = (m, M) => Math.random() * (M - m) + m;
 
   const updateScore = (points, color) => {
     score += points;
     spinnerData.score = score;
     scoreMsg.innerHTML = `<span style="color:${color}; font-weight: bolder">${score}</span>`;
     setTimeout(() => {
-      scoreMsg.innerHTML = `${score}`
-      isSpinning = (spinnerData.outcomes_points.length >= 12) ? true : false;
-      drawSector(sectors, null);
-      onWheel ? canvas.style.cursor = "grab" : canvas.style.cursor = "";
-      if (!interactive && spinnerData.outcomes_points.length < 12) { setTimeout(startAutoSpin, 1000) };
-    }, 1250);
+      scoreMsg.innerHTML = `${score}`;
+      startCycle();
+    }, 1200);
   };
 
-  const getIndex = (angle = currentAngle) => {
+  function getIndex(angle = currentAngle) {
     let normAngle = 0;
-    let modAngle = angle % 360;
-    if (modAngle > 270) {
-      normAngle = 360 - modAngle + 270;
-    } else if (modAngle < -90) { 
-      normAngle = -modAngle - 90;
-    } else {
-      normAngle = 270 - modAngle;
-    }
+    const modAngle = angle % 360;
+    if (modAngle > 270)      normAngle = 360 - modAngle + 270;
+    else if (modAngle < -90) normAngle = -modAngle - 90;
+    else                     normAngle = 270 - modAngle;
     return Math.floor(normAngle / (360 / tot));
-  };
+  }
 
   //* Draw sectors and prizes texts to canvas */
-  const drawSector = (sectors, sector) => {
+  function drawSector(sectors, activeIdx) {
     for (let i = 0; i < sectors.length; i++) {
       const ang = arc * i;
       ctx.save();
-      // COLOR
+
+      // Always show the true color
       ctx.beginPath();
-      ctx.fillStyle = (isSpinning && i == sector) ? "black" : sectors[i].color;
+      ctx.fillStyle = sectors[i].color;
       ctx.moveTo(rad, rad);
       ctx.arc(rad, rad, rad, ang, ang + arc);
       ctx.lineTo(rad, rad);
       ctx.fill();
-      // TEXT
+
+      // Labels
       ctx.translate(rad, rad);
-      let rotation = (arc/2) * (1 + 2*i) + Math.PI/2
-      ctx.rotate( rotation );
-
-
-      //ctx.rotate( (ang + arc / 2) + arc );
+      const rotation = (arc/2) * (1 + 2*i) + Math.PI/2;
+      ctx.rotate(rotation);
       ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.strokeStyle = "black";
+      ctx.lineWidth = 3;
       ctx.fillStyle = "#fff";
-      if (isSpinning && i == sector) {
-        ctx.font = "bolder 90px sans-serif"
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 3;
-        ctx.strokeText(sectors[i].label, 0, -140);
-        ctx.fillText(sectors[i].label, 0, -140);
+
+      if (conceal) {
+        ctx.font = "bold 72px sans-serif";
+        ctx.strokeText("?", 0, -140);
+        ctx.fillText("?", 0, -140);
       } else {
-        ctx.font = "bold 65px sans-serif"
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = 3;
-        ctx.strokeText(sectors[i].label, 0, -140);
-        ctx.fillText(sectors[i].label, 0, -140);
+        const isActive = (i === activeIdx);
+        ctx.font = isActive ? "bolder 90px sans-serif" : "bold 65px sans-serif";
+        // ← use the revealed, per-cycle assignment for the label
+        const lbl = assignment && assignment[i] ? assignment[i].label : "?";
+        ctx.strokeText(lbl, 0, -140);
+        ctx.fillText(lbl, 0, -140);
       }
       ctx.restore();
     }
-  };
+  }
 
   drawSector(sectors, null);
+  startCycle();
 
-  function startAutoSpin() {
-    direction = (Math.random() < 0.5 ? 1 : -1);
-    isAccelerating = true;
-    isSpinning = true;
-    angVelMax = rand(25, 50);                   
-    let initialSpeed = direction * rand(8, 15);
-    giveMoment(initialSpeed);
-  };
+  function onKeyDown(e) {
+    if (e.code === "Space" || e.keyCode === 32) {
+      e.preventDefault();
+      if (!stopping) hardStopAndReveal();
+    }
+  }
 
   if (interactive) {
-    canvas.addEventListener('mousedown', function(e) {
-        if (onWheel) { onGrab(e.clientX, e.clientY) };
-    });
+    window.addEventListener("keydown", onKeyDown);
 
-    canvas.addEventListener('mousemove', function(e) {
-        let dist = Math.sqrt( (wheelX - e.clientX)**2 + (wheelY - e.clientY)**2 );
-        dist < rad ? onWheel = true : onWheel = false;
-        onWheel && !isGrabbed && !isSpinning ? canvas.style.cursor = "grab" : canvas.style.cursor = "";
-        if(isGrabbed && onWheel) { onMove(e.clientX, e.clientY) };
-    });
-
-    window.addEventListener('mouseup', onRelease);
   } else {
     setTimeout(startAutoSpin, 1000);
   };
