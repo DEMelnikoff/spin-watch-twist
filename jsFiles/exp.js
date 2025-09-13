@@ -62,6 +62,11 @@ const exp = (function() {
             </div>`,
 
             `<div class='parent'>
+                <p>The number on the activated wedge will be added to your token tally.</p>
+                <img src="./img/standard-outcome.png" style="width:50%; height:50%">
+            </div>`,
+
+            `<div class='parent'>
                 <p>While spinning, the wedges will be veiled, like this:</p>
                 <img src="./img/spin-${play}-gif.gif" style="width:50%; height:50%">
             </div>`,
