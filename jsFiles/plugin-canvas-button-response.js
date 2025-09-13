@@ -86,7 +86,7 @@ var jsPsychCanvasButtonResponse = (function (jspsych) {
                 '" width="' +
                 trial.canvas_size[1] +
                 '"></canvas>' +
-                '<div id="spinUp"></div>' +
+                '<div id="spinUp" class="pointUp"></div>' +
               "</div>";
 
           //show prompt if there is one
